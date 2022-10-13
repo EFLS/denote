@@ -30,5 +30,88 @@
 ;; Org-mode. The file should be required after both denote.el and
 ;; Org-mode are loaded.
 
+;;; Org-mode Dynamic blocks
+
+;;;; Dynamic block to search links
+
+;; Org-mode has Dynamic blocks the content of which can be computed
+;; dynamically based on their header. This functionality can be
+;; leveraged to create automated lists of links to specific notes
+;; (similar to 'denote-link-add-links', but with the added benefit
+;; that the list can be updated easily).
+;;
+;; A dynamic block of the 'denote-links' type looks like this:
+;;
+;;     #+BEGIN: denote-links :regexp "denote"
+;;
+;;     #+END:
+;;
+;; With point at the #+BEGIN: line, pressing 'C-c C-c' will replace the
+;; contents of the block with links to notes matching the search
+;; ':regexp'. See also the denote manual on 'denote-link-add-links'.
+;;
+;; To only include "missing links" (i.e., links to notes that the
+;; current buffer doesn't already link to), add ':missing-only t' to
+;; the block's header.
+;;
+;; Inserting a block can be done via the Org-mode entry point
+;; 'org-dynamic-block-insert-dblock' and selecting 'denote-links' from
+;; the list, or directly by calling 'org-dblock-insert-denote-links'.
+;;
+;;;###autoload
+(defun org-dblock-insert-denote-links (regexp)
+  "Insert new Org dynamic block to insert denote links."
+  (interactive
+    (list (read-string "Search for (include _ for keyword): ")))
+  (org-create-dblock (list :name "denote-links"
+                           :regexp regexp
+                           :missing-only 't))
+  (org-update-dblock))
+
+(org-dynamic-block-define "denote-links" 'org-dblock-insert-denote-links)
+
+;; By using the `org-dblock-write:' format, Org-mode knows how to
+;; compute the dynamic block. Inner workings of this function copied
+;; from `denote-link-add-links'.
+;;
+;;;###autoload
+(defun org-dblock-write:denote-links (params)
+  (let ((regexp (plist-get params :regexp))
+        (missing-only (plist-get params :missing-only))
+        (current-file (buffer-file-name)))
+    (if missing-only
+        (progn
+          (denote-link-add-missing-links regexp)
+          (join-line)) ;; remove trailing empty line left by denote-link--prepare-links
+      (when-let ((files (delete current-file
+                                (denote-directory-files-matching-regexp regexp))))
+        (insert (denote-link--prepare-links files current-file nil))
+        (join-line))))) ;; remove trailing empty line
+
+;;;; Dynamic block for backlinks
+
+;; Similarly, we can create a 'denote-backlinks' block that inserts
+;; links to notes that link to the current note.
+
+;; Note that this block type doesn't take any additional parameters
+;; (such as ':missing-only').
+
+;;;###autoload
+(defun org-dblock-insert-denote-backlinks ()
+  "Insert new Org dynamic block to include backlinks."
+  (interactive)
+  (org-create-dblock (list :name "denote-backlinks"))
+  (org-update-dblock))
+
+(org-dynamic-block-define "denote-backlinks" 'org-dblock-insert-denote-backlinks)
+
+;;;###autoload
+(defun org-dblock-write:denote-backlinks (params)
+  (when-let* ((file (buffer-file-name))
+              (id (denote-retrieve-filename-identifier file))
+              (files (denote--retrieve-process-grep id)))
+    (insert (denote-link--prepare-links files file nil))
+    (join-line))) ;; remove trailing empty line
+
 (provide 'denote-org)
 ;;; denote-org.el ends here
